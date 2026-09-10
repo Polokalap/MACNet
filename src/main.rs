@@ -4,8 +4,9 @@ mod logger;
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum::routing::get;
+use serde::Deserialize;
 use sqlx::SqlitePool;
-use crate::logger::info;
+use crate::logger::{info, warn};
 
 #[derive(Clone)]
 struct AppState {
@@ -15,7 +16,13 @@ struct AppState {
 #[tokio::main]
 async fn main() {
 
-    let version = "0.1-PREVIEW";
+    let version = String::from("0.1-PREVIEW");
+
+    if !check_update(version).await {
+
+        warn("A new version is available! You can download it at https://github.com/Polokalap/MACNet/releases/latest").await;
+
+    }
 
     info("Starting MACNET!").await;
 
@@ -48,8 +55,28 @@ async fn home() -> Response {
 
 }
 
-async fn check_update() -> bool {
+#[derive(Debug, Deserialize)]
+struct LatestVersion {
+    version: String,
+}
 
-    false
+async fn check_update(current: String) -> bool {
+
+    let url = String::from("https://raw.githubusercontent.com/Polokalap/MACNet/refs/heads/main/latest.toml");
+
+    let body = match reqwest::get(url).await {
+        Ok(resp) => match resp.text().await {
+            Ok(text) => text,
+            Err(_) => return true,
+        },
+        Err(_) => return true,
+    };
+
+    let latest: LatestVersion = match toml::from_str(body.as_str()) {
+        Ok(v) => v,
+        Err(_) => return true,
+    };
+
+    current.eq(&latest.version)
 
 }
