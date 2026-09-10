@@ -11,3 +11,4 @@ chrono = "0.4.45"
 reqwest = { version = "0.12", features = ["blocking"] }
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }
+uuid = { version = "1.26.1", features = ["v4"] }

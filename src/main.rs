@@ -1,16 +1,22 @@
 pub mod database;
 mod logger;
+pub mod config;
+pub mod console;
 
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum::routing::get;
 use serde::Deserialize;
 use sqlx::SqlitePool;
+use crate::config::Config;
 use crate::logger::{info, warn};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 struct AppState {
     db: SqlitePool,
+    config: Config,
+    start: u128
 }
 
 #[tokio::main]
@@ -24,9 +30,26 @@ async fn main() {
 
     }
 
-    info("Starting MACNET!").await;
+    info("Starting MACNet!").await;
 
-    let state = database::init().await;
+    let config = tokio::spawn(config::init());
+    let database = tokio::spawn(database::init());
+
+    let start = SystemTime::now();
+    let since_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+
+    let config = config.await.unwrap();
+
+    let state = AppState {
+        db: database.await.unwrap(),
+        config: config.clone(),
+        start: since_epoch.as_millis()
+    };
+
+    info("-------------------------------------------------------").await;
+    info(format!("Authorization key: {}", config.clone().key()).as_str()).await;
 
     let mut port = 6700;
 
@@ -40,6 +63,15 @@ async fn main() {
     };
 
     info(format!("Starting server on port {}", port).as_str()).await;
+
+    tokio::spawn(console::init(state.clone()));
+
+    let now = SystemTime::now();
+    let elapsed = now
+        .duration_since(start)
+        .expect("Time went backwards");
+
+    info(format!("Started up in {}ms!", elapsed.as_millis()).as_str()).await;
 
     let app = Router::new()
         .route("/", get(home))
