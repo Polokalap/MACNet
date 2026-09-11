@@ -3,6 +3,7 @@ mod logger;
 pub mod config;
 pub mod console;
 
+use std::sync::OnceLock;
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum::routing::get;
@@ -12,7 +13,10 @@ use crate::config::Config;
 use crate::logger::{info, warn};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+static STATE: OnceLock<AppState> = OnceLock::new();
+
 #[derive(Clone)]
+#[derive(Debug)]
 struct AppState {
     db: SqlitePool,
     config: Config,
@@ -47,6 +51,8 @@ async fn main() {
         config: config.clone(),
         start: since_epoch.as_millis()
     };
+
+    STATE.set(state.clone()).expect("Failed to set state");
 
     info("-------------------------------------------------------").await;
     info(format!("Authorization key: {}", config.clone().key()).as_str()).await;

@@ -1,4 +1,14 @@
-use chrono::{ Local };
+use chrono::Local;
+use once_cell::sync::OnceCell;
+use rustyline_async::SharedWriter;
+use std::io::Write;
+use std::sync::Mutex;
+
+static WRITER: OnceCell<Mutex<SharedWriter>> = OnceCell::new();
+
+pub fn set_writer(writer: SharedWriter) {
+    let _ = WRITER.set(Mutex::new(writer));
+}
 
 enum Type {
     INFO,
@@ -34,8 +44,17 @@ async fn log_message(message: String, log_type: Type) {
     let now = Local::now();
     let time = now.format("%Y:%m:%d %H:%M:%S").to_string();
     let color = get_color(&log_type);
+    let line = format!("{}[{}] {}\x1b[0m", color, time, message);
 
-    println!("{}[{}] {}\x1b[0m", color, time, message);
+    match WRITER.get() {
+        Some(mutex) => {
+            if let Ok(mut writer) = mutex.lock() {
+                let _ = writeln!(writer, "{}", line);
+                let _ = writer.flush();
+            }
+        }
+        None => println!("{}", line),
+    }
 
 }
 

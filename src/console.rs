@@ -1,24 +1,31 @@
-use std::io;
 use std::io::Write;
+use std::process::exit;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use crate::AppState;
+use axum::response::IntoResponse;
+use rustyline_async::{Readline, ReadlineEvent};
+use toml::macros::insert_toml;
+use crate::{logger, AppState, STATE};
 use crate::logger::{info, warn};
 
 pub async fn init(state: AppState) {
 
-    let mut reader = BufReader::new(tokio::io::stdin()).lines();
+    let (mut rl, mut stdout) = Readline::new("> ".to_owned()).expect("Readline error");
+    logger::set_writer(stdout.clone());
 
     loop {
 
-        print!("> ");
-        io::stdout().flush().unwrap();
-
-        let line = match reader.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) => break, // stdin closed (EOF)
+        let line = match rl.readline().await {
+            Ok(ReadlineEvent::Line(line)) => {
+                rl.add_history_entry(line.clone());
+                line
+            }
+            Ok(ReadlineEvent::Eof) | Ok(ReadlineEvent::Interrupted) => {
+                let _ = rl.flush();
+                info("Closing MACNet...").await;
+                exit(0);
+            }
             Err(_) => {
-                warn("Failed to read line, please open an issue on our github!").await;
+                warn("Failed to read line, please open an issue on our girhub!").await;
                 continue;
             }
         };
@@ -26,9 +33,7 @@ pub async fn init(state: AppState) {
         let input = line.trim();
 
         if input.is_empty() {
-
             continue;
-
         }
 
         let mut parts = input.split_whitespace();
@@ -47,19 +52,32 @@ pub async fn init(state: AppState) {
                 let elapsed_time = ms - state.start;
                 let elapsed = format_duration(elapsed_time);
 
+                let players = sqlx::query("SELECT * FROM players ORDER BY id ASC")
+                    .fetch_all(&STATE.get().unwrap().db)
+                    .await;
+
                 info(format!("Running for {}!", elapsed).as_str()).await;
+                info(format!("Registered players: {}", players.unwrap().len()).as_str()).await;
 
             }
             "clear" => {
 
-                print!("\x1B[2J\x1B[1;1H");
-                io::stdout().flush().unwrap();
+                writeln!(stdout, "\x1B[2J\x1B[1;1H").ok();
+
+            }
+            "exit" => {
+
+                info("Closing MACNet...").await;
+                let _ = rl.flush();
+                exit(1);
 
             }
             _ => {}
         }
 
     }
+
+    let _ = rl.flush();
 
 }
 
